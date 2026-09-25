@@ -12,11 +12,19 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
-// ── OpenAI client (lazy — instantiated per-request so missing key only
-//    errors at extract time, not at server startup) ──────────────────────────
-function getOpenAIClient() {
-  return new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// ── LLM client (lazy — instantiated per-request so a missing key only
+//    errors at extract time, not at server startup).
+//    Groq exposes an OpenAI-compatible API, so we reuse the openai SDK
+//    with Groq's baseURL. ─────────────────────────────────────────────────────
+function getLLMClient() {
+  return new OpenAI({
+    apiKey: process.env.GROQ_API_KEY,
+    baseURL: "https://api.groq.com/openai/v1",
+  });
 }
+
+// Groq-hosted model. gpt-oss-120b is a strong general-purpose chat model.
+const MODEL = process.env.LLM_MODEL || "openai/gpt-oss-120b";
 
 // ── Extraction prompt (mirrors extractor-rules.md) ───────────────────────────
 const SYSTEM_PROMPT = `You are a college announcement processor. When given raw notice text, extract and return a structured Markdown document with exactly these four sections:
@@ -46,14 +54,14 @@ app.post("/api/extract", async (req, res) => {
     return res.status(400).json({ error: "noticeText is required." });
   }
 
-  if (!process.env.OPENAI_API_KEY) {
-    return res.status(500).json({ error: "OPENAI_API_KEY is not configured on the server." });
+  if (!process.env.GROQ_API_KEY) {
+    return res.status(500).json({ error: "GROQ_API_KEY is not configured on the server." });
   }
 
   try {
-    const openai = getOpenAIClient();
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+    const llm = getLLMClient();
+    const completion = await llm.chat.completions.create({
+      model: MODEL,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: noticeText.trim() },
@@ -64,7 +72,7 @@ app.post("/api/extract", async (req, res) => {
     const markdown = completion.choices[0].message.content;
     res.json({ markdown });
   } catch (err) {
-    console.error("OpenAI error:", err.message);
+    console.error("LLM error:", err.message);
     const status = err.status || 500;
     res.status(status).json({ error: err.message });
   }
