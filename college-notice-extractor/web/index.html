@@ -111,12 +111,14 @@
   <script>
     let lastMarkdown = "";
 
+    // Always talk to the Express server on port 3000, regardless of what
+    // port this HTML file was opened from (e.g. Live Server on 5500).
+    const API_BASE = "http://localhost:3000";
+
     async function extractNotice() {
-      const noticeText = document.getElementById("noticeInput").value.trim();
-      const btn        = document.getElementById("extractBtn");
-      const btnIcon    = document.getElementById("btnIcon");
-      const btnText    = document.getElementById("btnText");
-      const errorBanner = document.getElementById("errorBanner");
+      const noticeText  = document.getElementById("noticeInput").value.trim();
+      const btnIcon     = document.getElementById("btnIcon");
+      const btnText     = document.getElementById("btnText");
 
       // Validate
       if (!noticeText) {
@@ -131,11 +133,24 @@
       btnText.textContent = "Extracting…";
 
       try {
-        const res = await fetch("/api/extract", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ noticeText }),
-        });
+        let res;
+        try {
+          res = await fetch(`${API_BASE}/api/extract`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ noticeText }),
+          });
+        } catch (networkErr) {
+          throw new Error(
+            "Cannot reach the server. Make sure you ran `node server.js` in the web/ folder (it should be running on port 3000)."
+          );
+        }
+
+        // Guard against HTML error pages returned instead of JSON
+        const contentType = res.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          throw new Error(`Server returned an unexpected response (HTTP ${res.status}). Is the Express server running on port 3000?`);
+        }
 
         const data = await res.json();
 
