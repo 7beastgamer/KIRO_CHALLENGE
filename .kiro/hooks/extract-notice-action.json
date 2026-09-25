@@ -1,0 +1,15 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Notice Action Extractor",
+      "trigger": "PostFileCreate",
+      "description": "Extracts deadlines and actionable tasks from new college notices",
+      "matcher": "notices/raw/.*\\.(txt|md)$",
+      "action": {
+        "type": "agent",
+        "prompt": "Read the notice from the newly created file in `notices/raw/`. Extract what changed, who is affected, key deadlines, and a required action checklist according to `.kiro/steering/extractor-rules.md`. Write the formatted output directly into a new markdown file inside `notices/extracted/` with the file suffix `-checklist.md`."
+      }
+    }
+  ]
+}
