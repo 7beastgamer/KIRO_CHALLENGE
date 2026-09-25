@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>College Notice Extractor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    /* Rendered markdown styles */
+    #output h2 { font-size: 1.125rem; font-weight: 700; margin: 1.25rem 0 0.5rem; color: #1e3a5f; }
+    #output ul  { list-style: disc; padding-left: 1.5rem; margin-bottom: 0.75rem; }
+    #output li  { margin-bottom: 0.25rem; }
+    #output input[type="checkbox"] { margin-right: 0.4rem; accent-color: #2563eb; }
+
+    /* Checklist items rendered from - [ ] */
+    #output li input[type="checkbox"] { pointer-events: none; }
+
+    /* Subtle scrollbar */
+    textarea::-webkit-scrollbar { width: 6px; }
+    textarea::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+  </style>
+</head>
+<body class="min-h-screen bg-slate-50 text-slate-800 font-sans">
+
+  <!-- ── Header ── -->
+  <header class="bg-blue-900 text-white px-6 py-5 shadow-md">
+    <div class="max-w-4xl mx-auto flex items-center gap-3">
+      <span class="text-3xl">🎓</span>
+      <div>
+        <h1 class="text-xl font-bold leading-tight">College Notice Extractor</h1>
+        <p class="text-blue-300 text-sm">Paste any college announcement — get a clean action checklist instantly.</p>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Main ── -->
+  <main class="max-w-4xl mx-auto px-6 py-8 grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+    <!-- Input panel -->
+    <section class="flex flex-col gap-3">
+      <label class="text-sm font-semibold text-slate-600 uppercase tracking-wide" for="noticeInput">
+        📋 Paste Notice Text
+      </label>
+      <textarea
+        id="noticeInput"
+        rows="16"
+        placeholder="Paste your college announcement, bulletin, or email here..."
+        class="w-full rounded-xl border border-slate-200 bg-white p-4 text-sm leading-relaxed shadow-sm
+               focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none transition"
+      ></textarea>
+
+      <div class="flex items-center gap-3">
+        <button
+          id="extractBtn"
+          onclick="extractNotice()"
+          class="flex-1 bg-blue-700 hover:bg-blue-800 active:bg-blue-900 text-white font-semibold
+                 py-3 px-6 rounded-xl shadow transition-all duration-150 flex items-center justify-center gap-2"
+        >
+          <span id="btnIcon">⚡</span>
+          <span id="btnText">Extract Checklist</span>
+        </button>
+        <button
+          onclick="clearAll()"
+          title="Clear"
+          class="p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-100 text-slate-500
+                 shadow-sm transition text-lg"
+        >🗑️</button>
+      </div>
+
+      <!-- Error banner -->
+      <div id="errorBanner" class="hidden bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3"></div>
+    </section>
+
+    <!-- Output panel -->
+    <section class="flex flex-col gap-3">
+      <div class="flex items-center justify-between">
+        <label class="text-sm font-semibold text-slate-600 uppercase tracking-wide">
+          ✅ Action Checklist
+        </label>
+        <button
+          id="copyBtn"
+          onclick="copyMarkdown()"
+          class="hidden text-xs bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium
+                 px-3 py-1.5 rounded-lg border border-slate-200 transition"
+        >📋 Copy Markdown</button>
+      </div>
+
+      <!-- Skeleton / placeholder -->
+      <div id="placeholder"
+           class="flex-1 min-h-[22rem] rounded-xl border-2 border-dashed border-slate-200
+                  bg-white flex flex-col items-center justify-center text-slate-400 text-sm gap-2">
+        <span class="text-4xl">📄</span>
+        <span>Your checklist will appear here</span>
+      </div>
+
+      <!-- Rendered output -->
+      <div id="output"
+           class="hidden flex-1 min-h-[22rem] rounded-xl border border-slate-200 bg-white
+                  p-5 text-sm leading-relaxed shadow-sm overflow-y-auto prose max-w-none">
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ── Footer ── -->
+  <footer class="text-center text-xs text-slate-400 pb-8">
+    Powered by GPT-4o mini · Built with Kiro IDE
+  </footer>
+
+  <script>
+    let lastMarkdown = "";
+
+    async function extractNotice() {
+      const noticeText = document.getElementById("noticeInput").value.trim();
+      const btn        = document.getElementById("extractBtn");
+      const btnIcon    = document.getElementById("btnIcon");
+      const btnText    = document.getElementById("btnText");
+      const errorBanner = document.getElementById("errorBanner");
+
+      // Validate
+      if (!noticeText) {
+        showError("Please paste a notice before extracting.");
+        return;
+      }
+
+      // Loading state
+      hideError();
+      setLoading(true);
+      btnIcon.textContent = "⏳";
+      btnText.textContent = "Extracting…";
+
+      try {
+        const res = await fetch("/api/extract", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ noticeText }),
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || `Server error ${res.status}`);
+        }
+
+        lastMarkdown = data.markdown;
+        renderOutput(lastMarkdown);
+
+      } catch (err) {
+        showError(err.message);
+      } finally {
+        setLoading(false);
+        btnIcon.textContent = "⚡";
+        btnText.textContent = "Extract Checklist";
+      }
+    }
+
+    function renderOutput(markdown) {
+      // Convert - [ ] to real checkboxes before rendering
+      const withCheckboxes = markdown
+        .replace(/^- \[ \] /gm, "- <input type='checkbox'> ")
+        .replace(/^- \[x\] /gim, "- <input type='checkbox' checked> ");
+
+      document.getElementById("output").innerHTML = marked.parse(withCheckboxes);
+      document.getElementById("placeholder").classList.add("hidden");
+      document.getElementById("output").classList.remove("hidden");
+      document.getElementById("copyBtn").classList.remove("hidden");
+    }
+
+    function clearAll() {
+      document.getElementById("noticeInput").value = "";
+      document.getElementById("output").innerHTML = "";
+      document.getElementById("output").classList.add("hidden");
+      document.getElementById("placeholder").classList.remove("hidden");
+      document.getElementById("copyBtn").classList.add("hidden");
+      hideError();
+      lastMarkdown = "";
+    }
+
+    async function copyMarkdown() {
+      if (!lastMarkdown) return;
+      await navigator.clipboard.writeText(lastMarkdown);
+      const btn = document.getElementById("copyBtn");
+      btn.textContent = "✅ Copied!";
+      setTimeout(() => { btn.textContent = "📋 Copy Markdown"; }, 2000);
+    }
+
+    function setLoading(on) {
+      const btn = document.getElementById("extractBtn");
+      btn.disabled = on;
+      btn.classList.toggle("opacity-70", on);
+      btn.classList.toggle("cursor-not-allowed", on);
+    }
+
+    function showError(msg) {
+      const el = document.getElementById("errorBanner");
+      el.textContent = "⚠️ " + msg;
+      el.classList.remove("hidden");
+    }
+
+    function hideError() {
+      document.getElementById("errorBanner").classList.add("hidden");
+    }
+  </script>
+</body>
+</html>
